@@ -1,0 +1,57 @@
+{
+  "model_name": "XGBoost",
+  "features": [
+    "hour_sin",
+    "hour_cos",
+    "pm25_lag_1",
+    "co2_lag_1",
+    "pm25_lag_2",
+    "co2_lag_2",
+    "pm25_rolling_mean_1h",
+    "temp_rolling_mean_30m",
+    "humid_temp_inter"
+  ],
+  "target": "target_pm25_15m",
+  "timestamp_column": "timestamp(UTC+1)",
+  "holdout_start": 19051,
+  "metrics": {
+    "MAE": 1.2655303358695869,
+    "RMSE": 2.3523334287692825,
+    "R2": 0.9130561231932882,
+    "BestParams": {
+      "subsample": 0.7,
+      "n_estimators": 200,
+      "min_child_weight": 5,
+      "max_depth": 3,
+      "learning_rate": 0.05,
+      "colsample_bytree": 0.9
+    }
+  },
+  "all_results": {
+    "XGBoost": {
+      "MAE": 1.2655303358695869,
+      "RMSE": 2.3523334287692825,
+      "R2": 0.9130561231932882,
+      "BestParams": {
+        "subsample": 0.7,
+        "n_estimators": 200,
+        "min_child_weight": 5,
+        "max_depth": 3,
+        "learning_rate": 0.05,
+        "colsample_bytree": 0.9
+      }
+    },
+    "Random Forest": {
+      "MAE": 2.559248624363199,
+      "RMSE": 3.106962485270226,
+      "R2": 0.8483252598496114,
+      "BestParams": {
+        "n_estimators": 400,
+        "min_samples_split": 2,
+        "min_samples_leaf": 4,
+        "max_features": "log2",
+        "max_depth": 5
+      }
+    }
+  }
+}

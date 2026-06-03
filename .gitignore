@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+
+*.env*
+live_sensor.csv
+models/alarm_state.json
+
+.ipynb_checkpoints/
+
+/dataset
+demo.txt

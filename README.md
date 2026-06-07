@@ -9,11 +9,10 @@ the latest sensor row plus the previous 12 five-minute rows.
 ```text
 alarm_monitor.py          Telegram alarm loop for live CSV monitoring
 model_interface.py        Live API server and shared prediction helpers
-react_dashboard.html      React operations dashboard served by the API server
 simulate_sensors.py       Local hatchery sensor simulator
 telegram_alarm.py         Telegram Bot API sender
-train_and_save_model.py   Training script that saves the best model
 config.py                 Shared telegram.env loader
+frontend/                 React dashboard HTML
 dataset/                  Training/demo datasets
 models/                   Saved model artifacts and local alarm state
 telegram.env.example      Example local configuration
@@ -45,13 +44,7 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-Train and save the best model:
-
-```powershell
-python train_and_save_model.py
-```
-
-The best model is saved to `models/best_model.pkl`.
+Train in the notebook, then save the best model artifact to `models/best_model.pkl`.
 
 ## Live CSV Warm-Up
 
@@ -175,29 +168,12 @@ The browser demo can:
 - show a latest sensor snapshot for PM2.5, PM10, CO2, and VOC
 - show warning-band distribution across recent rows
 - show PM2.5 momentum, where positive bars mean rising pollution
-- run prediction on demand
-- download a structured JSON report for later LLM consultation
+- show current risk drivers from PM2.5, PM10, CO2, and VOC
+- refresh prediction automatically
+- send a compact report to the AI consultation endpoint
 
 You still need 13 rows before prediction is ready. The Telegram monitor reads the
 same `live_sensor.csv`.
-
-## Report Download
-
-Use `Download Report` in the dashboard to export a JSON report locally from the
-browser. The server does not auto-save reports. The report includes current
-status, sensor snapshot, recent statistics, high-pollution events, model context,
-and a suggested LLM consultation prompt.
-
-For NVIDIA free hosted endpoints, use a chat/instruction model from the official
-NVIDIA Build catalog. Recommended starting point:
-
-```text
-nvidia/llama-3.3-nemotron-super-49b-v1.5
-```
-
-It is suitable for structured report analysis, explanations, and consultation
-style feedback. Avoid reward, rerank, embedding, or content-safety models for
-this task because they are not general consultation/chat models.
 
 ## Warning Bands
 

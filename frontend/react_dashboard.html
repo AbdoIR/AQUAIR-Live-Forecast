@@ -341,6 +341,14 @@
           flex-direction: column;
         }
       }
+      .panel p {
+        margin: 4px 0 10px;
+        line-height: 1.55;
+      }
+      .panel h2,
+      .panel h3 {
+        margin-top: 0;
+      }
     </style>
   </head>
   <body>
@@ -673,6 +681,57 @@
         });
       }
 
+      function drawRiskDriverChart(canvas, rows) {
+        const { ctx, w, h } = prepareCanvas(canvas);
+        if (!rows.length) {
+          ctx.fillStyle = "#64748b";
+          ctx.fillText("No history yet.", 40, 150);
+          return;
+        }
+
+        const latest = rows[rows.length - 1];
+        const drivers = [
+          ["PM2.5", Number(latest.pm25 || 0) / 55, "#bd7474"],
+          ["PM10", Number(latest.pm10 || 0) / 100, "#c98a67"],
+          ["CO2", Math.max(0, Number(latest.co2 || 0) - 400) / 1000, "#6f9f87"],
+          ["VOC", Number(latest.voc || 0) / 300, "#8d95a3"],
+        ];
+        const weights = drivers.map(([, value]) => Math.max(0.01, value));
+        const total = weights.reduce((sum, value) => sum + value, 0);
+
+        const cx = Math.min(w * 0.4, 180);
+        const cy = h / 2;
+        const radius = Math.min(105, h * 0.32, w * 0.26);
+        let start = -Math.PI / 2;
+
+        drivers.forEach(([name, value, color], index) => {
+          const angle = (weights[index] / total) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.arc(cx, cy, radius, start, start + angle);
+          ctx.closePath();
+          ctx.fillStyle = color;
+          ctx.fill();
+          start += angle;
+        });
+
+        ctx.fillStyle = "#132033";
+        ctx.font = "13px Inter, Segoe UI, sans-serif";
+        let y = 54;
+        drivers.forEach(([name, value, color], index) => {
+          const pct = Math.round((weights[index] / total) * 100);
+          ctx.fillStyle = color;
+          ctx.fillRect(w * 0.62, y - 10, 12, 12);
+          ctx.fillStyle = "#132033";
+          ctx.fillText(`${name}: ${pct}%`, w * 0.62 + 20, y);
+          y += 28;
+        });
+
+        const topDriver = drivers[weights.indexOf(Math.max(...weights))][0];
+        ctx.fillStyle = "#64748b";
+        ctx.fillText(`Main pressure now: ${topDriver}`, 32, h - 24);
+      }
+
       function drawMomentumChart(canvas, rows) {
         const { ctx, w, h } = prepareCanvas(canvas);
         if (rows.length < 2) {
@@ -776,7 +835,7 @@
           ? prediction.level
           : {
               name: "Warming up",
-              action: prediction?.message || "Add at least 13 rows, then press Predict.",
+              action: prediction?.message || "Add at least 13 rows to start live prediction.",
               color: "#94a3b8",
             };
         const currentPm25 = summary?.ready
@@ -839,7 +898,6 @@
                 e(
                   "div",
                   { className: "controls" },
-                  e("button", { className: "btn btn-secondary", onClick: refresh }, "Predict"),
                   e("button", { className: "btn btn-secondary", onClick: analyze }, "Analyze"),
                 ),
               ),
@@ -1021,6 +1079,16 @@
                   e(ChartCanvas, {
                     id: "momentumChart",
                     draw: (canvas) => drawMomentumChart(canvas, rows),
+                    deps: [rows],
+                  }),
+                ),
+                e(
+                  "div",
+                  { className: "chart-card" },
+                  e("h3", null, "Risk Drivers"),
+                  e(ChartCanvas, {
+                    id: "pieChart",
+                    draw: (canvas) => drawRiskDriverChart(canvas, rows),
                     deps: [rows],
                   }),
                 ),

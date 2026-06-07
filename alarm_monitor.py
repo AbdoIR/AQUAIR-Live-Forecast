@@ -1,16 +1,20 @@
 import argparse
 import json
 import os
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 
 from config import load_env_file
 import model_interface as warning_model
 from telegram_alarm import TelegramConfigError, send_telegram_message
 
 
-BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_SOURCE = BASE_DIR / "live_sensor.csv"
 DEFAULT_STATE_PATH = BASE_DIR / "models" / "alarm_state.json"
 DANGEROUS_PM25 = 35.0
@@ -42,19 +46,23 @@ def format_alarm_message(result, hatchery_name):
     risk_source = result.get("risk_source", "15-minute forecast")
     level = result["level"]
     trend = result["trend"]
+    marker = " [SIMULATION]" if result.get("simulation") else ""
 
     return "\n".join(
         [
-            "AQUAIR PM2.5 ALARM" + (" [SIMULATION]" if result.get("simulation") else ""),
+            f"AQUAIR PM2.5 Alert{marker}",
             f"Facility: {hatchery_name}",
-            f"Level: {level['name']}",
-            f"PM2.5 used for warning: {risk_pm25:.2f} ug/m3 ({risk_source})",
-            f"Predicted PM2.5 in 15 min: {predicted:.2f} ug/m3",
-            f"Current PM2.5: {trend['current_pm25']:.2f} ug/m3",
-            f"Trend: {trend['direction']} ({trend['delta_next_15m']:+.2f} ug/m3 expected)",
+            "",
+            f"Status: {level['name']}",
+            f"Risk PM2.5: {risk_pm25:.1f} ug/m3",
+            f"Basis: {risk_source}",
+            "",
+            f"Current: {trend['current_pm25']:.1f} ug/m3",
+            f"Forecast +15 min: {predicted:.1f} ug/m3",
+            f"Trend: {trend['direction']} ({trend['delta_next_15m']:+.1f})",
+            "",
             f"Action: {level['action']}",
-            f"Timestamp: {result['latest_timestamp']}",
-            f"Model: {result['model_name']}",
+            f"Time: {result['latest_timestamp']}",
         ]
     )
 
@@ -125,8 +133,15 @@ def check_once(args):
         return result
 
     latest_timestamp = result["latest_timestamp"]
-    if state.get("last_seen_timestamp") == latest_timestamp and not args.simulate_prediction:
+    print(
+        f"Latest row: {latest_timestamp} | "
+        f"Level={result['level']['name']} | "
+        f"risk PM2.5={result.get('risk_pm25', result['prediction']):.2f} | "
+        f"threshold={args.min_pm25:.2f}"
+    )
+    if state.get("last_seen_timestamp") == latest_timestamp and not args.simulate_prediction and not args.force:
         print(f"No new live row. Latest timestamp already processed: {latest_timestamp}")
+        print("Use --force for a demo resend, --simulate-prediction for message-format testing, or append a new live row.")
         return result
 
     should_send, reason = should_send_alarm(result, state, args.min_pm25, args.cooldown_minutes)
@@ -179,6 +194,7 @@ def parse_args():
     parser.add_argument("--hatchery-name", default=os.getenv("HATCHERY_NAME", "Azrou hatchery"))
     parser.add_argument("--interval-seconds", type=int, default=0, help="Repeat forever every N seconds when greater than 0.")
     parser.add_argument("--dry-run", action="store_true", help="Print the Telegram message without sending it.")
+    parser.add_argument("--force", action="store_true", help="Process the latest row even if it was already seen.")
     parser.add_argument(
         "--simulate-prediction",
         type=float,

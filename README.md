@@ -152,7 +152,7 @@ python alarm_monitor.py --source C:\path\to\live_sensor.csv --simulate-predictio
 
 ## Live Dashboard
 
-Run a dashboard from the same live CSV:
+Run the demo interface from the same live CSV:
 
 ```powershell
 python model_interface.py --source C:\path\to\live_sensor.csv
@@ -164,9 +164,20 @@ Then open:
 http://127.0.0.1:8000
 ```
 
-If no `--source` is provided, only the dashboard uses the bundled dataset as demo
-data and labels it as a demo source. The Telegram monitor does not use demo rows
-as live history.
+The browser demo can:
+
+- add one `normal`, `moderate`, `high`, or `unhealthy` simulated sensor row
+- reset `live_sensor.csv`
+- visualize PM2.5 history
+- show a PM2.5 risk gauge
+- visualize CO2/VOC supporting trends
+- show a latest sensor snapshot for PM2.5, PM10, CO2, and VOC
+- show warning-band distribution across recent rows
+- show PM2.5 momentum, where positive bars mean rising pollution
+- run prediction on demand
+
+You still need 13 rows before prediction is ready. The Telegram monitor reads the
+same `live_sensor.csv`.
 
 ## Warning Bands
 

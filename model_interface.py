@@ -3,6 +3,8 @@ import json
 import math
 import os
 import pickle
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -36,6 +38,8 @@ LEVEL_RANK = {
     "High Pollution": 2,
     "Unhealthy": 3,
 }
+DEFAULT_NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
+DEFAULT_NVIDIA_MODEL = "nvidia/llama-3.3-nemotron-super-49b-v1.5"
 
 
 WARNING_LEVELS = [
@@ -248,15 +252,15 @@ def live_context(source_path, history_size=DEFAULT_HISTORY_SIZE):
     }
 
 
-def history_payload(source_path, limit=120):
+def history_payload(source_path, limit=160, range_hours=24, interval="15min"):
     df = load_live_rows(source_path)
     if not df.empty:
         latest = df[TIMESTAMP_COL].max()
-        start = latest - pd.Timedelta(hours=24)
+        start = latest - pd.Timedelta(hours=range_hours)
         df = df[df[TIMESTAMP_COL] >= start].copy()
         df = df.set_index(TIMESTAMP_COL)
         numeric_cols = [col for col in RAW_COLUMNS if col in df.columns]
-        df = df[numeric_cols].resample("15min").mean().dropna(subset=["pm25"]).reset_index()
+        df = df[numeric_cols].resample(interval).mean().dropna(subset=["pm25"]).reset_index()
     if len(df) > limit:
         df = df.tail(limit)
     df = df.copy()
@@ -265,8 +269,8 @@ def history_payload(source_path, limit=120):
         "rows": df[[TIMESTAMP_COL, *RAW_COLUMNS]].to_dict(orient="records"),
         "count": len(df),
         "source": str(source_path),
-        "range": "last 24h",
-        "point_interval": "15min",
+        "range": f"last {range_hours}h",
+        "point_interval": interval,
     }
 
 
@@ -289,6 +293,151 @@ def sensor_summary_payload(source_path):
         "avg_co2_1h": to_float(recent["co2"].mean()),
         "avg_voc_1h": to_float(recent["voc"].mean()),
         "level": warning_level(to_float(latest["pm25"])),
+    }
+
+
+def report_payload(state, range_hours=24, interval="15min"):
+    live = live_warning_payload(state)
+    history = history_payload(state.live_source, range_hours=range_hours, interval=interval)
+    summary = sensor_summary_payload(state.live_source)
+    rows = history["rows"]
+
+    band_counts = {"Normal / Good": 0, "Moderate": 0, "High Pollution": 0, "Unhealthy": 0}
+    for row in rows:
+        level = warning_level(to_float(row.get("pm25")))["name"]
+        band_counts[level] += 1
+
+    events = []
+    current_event = None
+    for row in rows:
+        pm25 = to_float(row.get("pm25"))
+        level = warning_level(pm25)
+        is_event = level["name"] in ["High Pollution", "Unhealthy"]
+        timestamp = row.get(TIMESTAMP_COL)
+        if is_event and current_event is None:
+            current_event = {"level": level["name"], "start": timestamp, "end": timestamp, "max_pm25": pm25}
+        elif is_event and current_event is not None:
+            current_event["end"] = timestamp
+            current_event["max_pm25"] = max(current_event["max_pm25"], pm25)
+            if level["name"] == "Unhealthy":
+                current_event["level"] = "Unhealthy"
+        elif not is_event and current_event is not None:
+            events.append(current_event)
+            current_event = None
+    if current_event is not None:
+        events.append(current_event)
+
+    return {
+        "facility": os.getenv("HATCHERY_NAME", "Azrou hatchery"),
+        "generated_at": datetime.now(tz=LOCAL_TZ).isoformat(timespec="seconds"),
+        "source": str(state.live_source),
+        "time_range": history["range"],
+        "aggregation": history["point_interval"],
+        "current_status": {
+            "ready": live.get("ready", False),
+            "level": live.get("level", {}).get("name"),
+            "risk_pm25": live.get("risk_pm25"),
+            "risk_source": live.get("risk_source"),
+            "current_pm25": live.get("trend", {}).get("current_pm25"),
+            "predicted_pm25_15m": live.get("prediction"),
+            "trend": live.get("trend", {}).get("direction"),
+            "latest_timestamp": live.get("latest_timestamp"),
+        },
+        "sensor_snapshot": summary.get("latest", {}),
+        "recent_statistics": {
+            "points": history["count"],
+            "band_counts": band_counts,
+            "avg_pm25_1h": summary.get("avg_pm25_1h"),
+            "max_pm25_1h": summary.get("max_pm25_1h"),
+            "avg_co2_1h": summary.get("avg_co2_1h"),
+            "avg_voc_1h": summary.get("avg_voc_1h"),
+        },
+        "events": events,
+        "model_context": {
+            "model": state.model_name,
+            "prediction_horizon": "15 minutes",
+            "warning_basis": "max(current_pm25, predicted_pm25)",
+            "features": state.features,
+        },
+        "llm_consultation_prompt": (
+            "You are an aquaculture hatchery air-quality consultant. Analyze this PM2.5 report and provide: "
+            "likely causes, operational risk, immediate actions, prevention recommendations, and sensor reliability notes."
+        ),
+    }
+
+
+def compact_llm_report(report):
+    return {
+        "facility": report["facility"],
+        "generated_at": report["generated_at"],
+        "time_range": report["time_range"],
+        "aggregation": report["aggregation"],
+        "current_status": report["current_status"],
+        "sensor_snapshot": report["sensor_snapshot"],
+        "recent_statistics": report["recent_statistics"],
+        "events": report["events"][-5:],
+        "model_context": {
+            "prediction_horizon": report["model_context"]["prediction_horizon"],
+            "warning_basis": report["model_context"]["warning_basis"],
+        },
+    }
+
+
+def consultation_prompt(report):
+    return (
+        "You are an aquaculture hatchery air-quality consultant.\n"
+        "Analyze the PM2.5 monitoring report below for the hatchery responsible person.\n\n"
+        "Return a brief operator-facing consultation in markdown. Keep it under 180 words.\n"
+        "Use exactly these sections:\n"
+        "## Situation\n"
+        "## Risk\n"
+        "## Recommended Actions\n"
+        "## Notes\n\n"
+        "Be practical and specific. Do not mention any LLM, API provider, or model name. "
+        "Do not invent facts outside the data. If data is insufficient, say so briefly.\n\n"
+        f"PM2.5 report JSON:\n{json.dumps(compact_llm_report(report), indent=2)}"
+    )
+
+
+def call_nvidia_llm(prompt):
+    load_env_file()
+    api_key = os.getenv("NVIDIA_API_KEY")
+    if not api_key:
+        raise RuntimeError("Set NVIDIA_API_KEY in telegram.env before using Analyze.")
+
+    base_url = os.getenv("NVIDIA_BASE_URL", DEFAULT_NVIDIA_BASE_URL).rstrip("/")
+    model = os.getenv("NVIDIA_MODEL", DEFAULT_NVIDIA_MODEL)
+    url = f"{base_url}/chat/completions"
+    body = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "max_tokens": 4096,
+        "frequency_penalty": 0,
+        "presence_penalty": 0,
+        "stream": False,
+    }
+
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"NVIDIA API error {exc.code}: {detail}") from exc
+
+    return {
+        "model": model,
+        "content": payload["choices"][0]["message"]["content"],
     }
 
 
@@ -481,7 +630,7 @@ HTML = """<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AQUAIR PM2.5 Demo</title>
+  <title>AQUAIR Operations</title>
   <style>
     :root {
       font-family: Inter, ui-sans-serif, system-ui, Segoe UI, sans-serif;
@@ -504,6 +653,8 @@ HTML = """<!doctype html>
       color: #132033;
       border-bottom: 1px solid var(--line);
     }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .brand { display: flex; flex-direction: column; gap: 4px; }
     h1 { margin: 0 0 6px; font-size: clamp(24px, 3vw, 38px); }
     main { padding: 18px min(5vw, 64px); display: grid; gap: 10px; }
     section {
@@ -530,6 +681,19 @@ HTML = """<!doctype html>
     button.unhealthy { background: #bd7474; }
     button.secondary { background: #e8eef9; color: #1b2a44; border-color: #cbd7e7; box-shadow: none; }
     button.danger { background: #334155; }
+    select, .segmented button {
+      border: 1px solid #cbd7e7;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #ffffff;
+      color: #1f2937;
+      font-weight: 750;
+      box-shadow: none;
+    }
+    .segmented { display: flex; flex-wrap: wrap; gap: 6px; }
+    .segmented button.active { background: #e8eef9; border-color: #9fb4da; color: #1d4ed8; }
+    .toolbar { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .panel-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
     .controls { display: flex; flex-wrap: wrap; gap: 10px; }
     .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px; margin-top: 12px; }
     .metric { border: 1px solid #e0e7f1; border-radius: 8px; padding: 14px; background: linear-gradient(180deg, #fff, #f8fbff); }
@@ -545,6 +709,12 @@ HTML = """<!doctype html>
     #gaugeChart { height: 130px; margin-top: 10px; }
     .subtle, .fineprint { color: var(--ink-soft); }
     .notice { background: #f4f7fb; border: 1px solid #dbe4ef; border-radius: 8px; padding: 10px 12px; color: #475569; }
+    .analysis { color: #1f2937; line-height: 1.5; }
+    .analysis h2 { font-size: 16px; margin: 14px 0 6px; }
+    .analysis p { margin: 6px 0; }
+    .analysis ul { margin: 6px 0 10px 20px; padding: 0; }
+    .chart-wrap { position: relative; }
+    .tooltip { position: absolute; display: none; pointer-events: none; background: #111827; color: #fff; padding: 7px 9px; border-radius: 6px; font-size: 12px; box-shadow: 0 8px 20px rgba(15,23,42,0.18); z-index: 5; }
     header .subtle { color: var(--ink-soft); }
     @media (max-width: 900px) { .metric-grid { grid-template-columns: 1fr; } }
     @media (max-width: 1100px) { .charts { grid-template-columns: 1fr; } }
@@ -552,21 +722,32 @@ HTML = """<!doctype html>
 </head>
 <body>
   <header>
-    <h1>AQUAIR PM2.5 Demo Interface</h1>
-    <p class="subtle">Simulate hatchery sensor rows, visualize PM2.5, then run the 15-minute warning prediction.</p>
+    <div class="topbar">
+      <div class="brand">
+        <h1>AQUAIR Operations</h1>
+        <p class="subtle">Live PM2.5 forecasting, warning status, and Telegram alarm control for the hatchery.</p>
+      </div>
+    </div>
   </header>
   <main>
     <section>
-      <h2>Sensor Simulation Controls</h2>
-      <div class="controls">
-        <button class="normal" data-scenario="normal">Add Normal Row</button>
-        <button class="moderate" data-scenario="moderate">Add Moderate Row</button>
-        <button class="high" data-scenario="high">Add High Row</button>
-        <button class="unhealthy" data-scenario="unhealthy">Add Unhealthy Row</button>
-        <button id="reset" class="danger">Reset Rows</button>
-        <button id="predict" class="secondary">Predict</button>
+      <div class="toolbar">
+        <div>
+          <h2>Command Center</h2>
+          <p id="status" class="fineprint">Ready.</p>
+        </div>
+        <div class="controls">
+          <button id="predict" class="secondary">Predict</button>
+          <button id="analyzeReport" class="secondary">Analyze</button>
+        </div>
       </div>
-      <p id="status" class="fineprint">Ready.</p>
+      <div class="controls">
+        <button class="normal" data-scenario="normal">Add Normal</button>
+        <button class="moderate" data-scenario="moderate">Add Moderate</button>
+        <button class="high" data-scenario="high">Add High</button>
+        <button class="unhealthy" data-scenario="unhealthy">Add Unhealthy</button>
+        <button id="reset" class="danger">Reset Rows</button>
+      </div>
     </section>
 
     <section>
@@ -592,12 +773,32 @@ HTML = """<!doctype html>
     </section>
 
     <section>
-      <h2>Dashboard Visuals</h2>
-      <p class="fineprint">Compact views for explaining air quality level, sensor context, and short-term movement. Charts show the latest 24 hours with one point every 15 minutes.</p>
+      <div class="panel-title">
+        <div>
+          <h2>Dashboard Visuals</h2>
+          <p class="fineprint">Interactive views for air quality level, sensor context, and short-term movement.</p>
+        </div>
+        <div class="toolbar">
+          <div class="segmented" id="rangeControls">
+            <button data-range="1">1h</button>
+            <button data-range="6">6h</button>
+            <button data-range="12">12h</button>
+            <button class="active" data-range="24">24h</button>
+          </div>
+          <select id="intervalSelect" aria-label="Aggregation interval">
+            <option value="5min">5 min points</option>
+            <option value="15min" selected>15 min points</option>
+            <option value="30min">30 min points</option>
+          </select>
+        </div>
+      </div>
       <div class="charts">
         <div>
           <h3>PM2.5 History</h3>
-          <canvas id="chart" width="1800" height="560"></canvas>
+          <div class="chart-wrap">
+            <canvas id="chart" width="1800" height="560"></canvas>
+            <div id="chartTooltip" class="tooltip"></div>
+          </div>
           <p class="fineprint">Each point is a 15-minute average from the latest 24 hours, so several raw 5-minute rows become one point.</p>
           <div class="legend">
             <span style="background:#d8eadf">0-12 Normal</span>
@@ -624,10 +825,17 @@ HTML = """<!doctype html>
         </div>
       </div>
     </section>
+    <section>
+      <h2>AI Consultation</h2>
+      <div id="analysisResult" class="analysis">No analysis yet.</div>
+    </section>
   </main>
 
   <script>
     const fmt = (n) => Number(n).toFixed(2);
+    let selectedRangeHours = 24;
+    let selectedInterval = "15min";
+    let pm25HitPoints = [];
 
     function prepareCanvas(canvas) {
       const ratio = window.devicePixelRatio || 1;
@@ -763,6 +971,48 @@ HTML = """<!doctype html>
       const data = text ? JSON.parse(text) : {};
       if (!res.ok) throw new Error(data.error || text);
       return data;
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function renderMarkdownLite(markdown) {
+      const lines = String(markdown || "").split(/\\r?\\n/);
+      let html = "";
+      let inList = false;
+      const closeList = () => {
+        if (inList) {
+          html += "</ul>";
+          inList = false;
+        }
+      };
+
+      lines.forEach((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          closeList();
+          return;
+        }
+        if (trimmed.startsWith("## ")) {
+          closeList();
+          html += `<h2>${escapeHtml(trimmed.slice(3))}</h2>`;
+        } else if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+          if (!inList) {
+            html += "<ul>";
+            inList = true;
+          }
+          html += `<li>${escapeHtml(trimmed.slice(2))}</li>`;
+        } else {
+          closeList();
+          html += `<p>${escapeHtml(trimmed)}</p>`;
+        }
+      });
+      closeList();
+      return html || "No analysis returned.";
     }
 
     function setStatus(text) {
@@ -930,7 +1180,9 @@ HTML = """<!doctype html>
       });
       ctx.stroke();
       ctx.fillStyle = "#5b7fc7";
+      pm25HitPoints = [];
       values.forEach((v, i) => {
+        pm25HitPoints.push({ x: xFor(i), y: cleanYFor(v), value: v, row: rows[i] });
         ctx.beginPath();
         ctx.arc(xFor(i), cleanYFor(v), 4, 0, Math.PI * 2);
         ctx.fill();
@@ -1132,7 +1384,7 @@ HTML = """<!doctype html>
     }
 
     async function refreshHistory() {
-      const data = await jsonFetch("/api/history");
+      const data = await jsonFetch(`/api/history?range_hours=${selectedRangeHours}&interval=${selectedInterval}`);
       drawChart(data.rows);
       drawGasChart(data.rows);
       drawBandChart(data.rows);
@@ -1199,6 +1451,58 @@ HTML = """<!doctype html>
       }
     };
 
+    document.getElementById("analyzeReport").onclick = async () => {
+      try {
+        setStatus("Analyzing report...");
+        document.getElementById("analysisResult").textContent = "Analyzing...";
+        const result = await jsonFetch(`/api/analyze?range_hours=${selectedRangeHours}&interval=${selectedInterval}`);
+        document.getElementById("analysisResult").innerHTML = renderMarkdownLite(result.analysis);
+        setStatus("Analysis completed.");
+      } catch (err) {
+        document.getElementById("analysisResult").textContent = err.message;
+        setStatus(`Analysis failed: ${err.message}`);
+      }
+    };
+
+    document.querySelectorAll("#rangeControls button").forEach(button => {
+      button.onclick = async () => {
+        selectedRangeHours = Number(button.getAttribute("data-range"));
+        document.querySelectorAll("#rangeControls button").forEach(item => item.classList.remove("active"));
+        button.classList.add("active");
+        setStatus(`Range changed to latest ${selectedRangeHours}h.`);
+        await predict();
+      };
+    });
+
+    document.getElementById("intervalSelect").onchange = async (event) => {
+      selectedInterval = event.target.value;
+      setStatus(`Aggregation changed to ${selectedInterval}.`);
+      await predict();
+    };
+
+    document.getElementById("chart").onmousemove = (event) => {
+      const canvas = document.getElementById("chart");
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const nearest = pm25HitPoints
+        .map(point => ({ point, distance: Math.hypot(point.x - x, point.y - y) }))
+        .sort((a, b) => a.distance - b.distance)[0];
+      const tooltip = document.getElementById("chartTooltip");
+      if (!nearest || nearest.distance > 18) {
+        tooltip.style.display = "none";
+        return;
+      }
+      tooltip.style.display = "block";
+      tooltip.style.left = `${Math.min(x + 12, rect.width - 150)}px`;
+      tooltip.style.top = `${Math.max(8, y - 42)}px`;
+      tooltip.innerHTML = `PM2.5: ${fmt(nearest.point.value)}<br>${pointTimeLabel(nearest.point.row)}`;
+    };
+
+    document.getElementById("chart").onmouseleave = () => {
+      document.getElementById("chartTooltip").style.display = "none";
+    };
+
     predict().catch(err => setStatus(`Initial refresh failed: ${err.message}`));
   </script>
 </body>
@@ -1229,7 +1533,14 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/history":
             try:
-                json_response(self, history_payload(STATE.live_source))
+                query = parse_qs(parsed.query)
+                range_hours = int(query.get("range_hours", ["24"])[0])
+                interval = query.get("interval", ["15min"])[0]
+                if range_hours not in [1, 6, 12, 24]:
+                    raise ValueError("range_hours must be one of 1, 6, 12, 24")
+                if interval not in ["5min", "15min", "30min"]:
+                    raise ValueError("interval must be one of 5min, 15min, 30min")
+                json_response(self, history_payload(STATE.live_source, range_hours=range_hours, interval=interval))
             except Exception as exc:
                 json_response(self, {"error": str(exc)}, status=400)
             return
@@ -1237,6 +1548,28 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/summary":
             try:
                 json_response(self, sensor_summary_payload(STATE.live_source))
+            except Exception as exc:
+                json_response(self, {"error": str(exc)}, status=400)
+            return
+
+        if parsed.path == "/api/report":
+            try:
+                query = parse_qs(parsed.query)
+                range_hours = int(query.get("range_hours", ["24"])[0])
+                interval = query.get("interval", ["15min"])[0]
+                json_response(self, report_payload(STATE, range_hours=range_hours, interval=interval))
+            except Exception as exc:
+                json_response(self, {"error": str(exc)}, status=400)
+            return
+
+        if parsed.path == "/api/analyze":
+            try:
+                query = parse_qs(parsed.query)
+                range_hours = int(query.get("range_hours", ["24"])[0])
+                interval = query.get("interval", ["15min"])[0]
+                report = report_payload(STATE, range_hours=range_hours, interval=interval)
+                result = call_nvidia_llm(consultation_prompt(report))
+                json_response(self, {"analysis": result["content"], "model": result["model"], "report": compact_llm_report(report)})
             except Exception as exc:
                 json_response(self, {"error": str(exc)}, status=400)
             return

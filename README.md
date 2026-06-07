@@ -175,9 +175,28 @@ The browser demo can:
 - show warning-band distribution across recent rows
 - show PM2.5 momentum, where positive bars mean rising pollution
 - run prediction on demand
+- download a structured JSON report for later LLM consultation
 
 You still need 13 rows before prediction is ready. The Telegram monitor reads the
 same `live_sensor.csv`.
+
+## Report Download
+
+Use `Download Report` in the dashboard to export a JSON report locally from the
+browser. The server does not auto-save reports. The report includes current
+status, sensor snapshot, recent statistics, high-pollution events, model context,
+and a suggested LLM consultation prompt.
+
+For NVIDIA free hosted endpoints, use a chat/instruction model from the official
+NVIDIA Build catalog. Recommended starting point:
+
+```text
+nvidia/llama-3.3-nemotron-super-49b-v1.5
+```
+
+It is suitable for structured report analysis, explanations, and consultation
+style feedback. Avoid reward, rerank, embedding, or content-safety models for
+this task because they are not general consultation/chat models.
 
 ## Warning Bands
 
@@ -202,3 +221,19 @@ The Telegram threshold defaults to `35 ug/m3`, meaning `High Pollution` and
   metrics.
 - Retrain periodically with new hatchery data to handle seasonality, sensor
   drift, and facility changes.
+
+## NVIDIA LLM Consultation
+
+Use `Analyze` in the dashboard to send a compact PM2.5 report to an NVIDIA
+OpenAI-compatible endpoint and show the consultation result in the page.
+
+Add this to `telegram.env`:
+
+```text
+NVIDIA_API_KEY=your_nvidia_api_key
+NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+NVIDIA_MODEL=nvidia/llama-3.3-nemotron-super-49b-v1.5
+```
+
+The dashboard sends only necessary information: current warning status, latest
+sensor snapshot, recent statistics, high-pollution events, and model context.

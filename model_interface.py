@@ -23,6 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent
 FINAL_DATA_PATH = BASE_DIR / "dataset" / "aquair_final.csv"
 MODEL_PATH = BASE_DIR / "models" / "best_model.pkl"
 DEFAULT_LIVE_SOURCE = BASE_DIR / "live_sensor.csv"
+REACT_DASHBOARD_PATH = BASE_DIR / "react_dashboard.html"
 
 TIMESTAMP_COL = "timestamp(UTC+1)"
 TARGET_COL = "target_pm25_15m"
@@ -1514,7 +1515,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == "/":
-            body = HTML.encode("utf-8")
+            body = REACT_DASHBOARD_PATH.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))

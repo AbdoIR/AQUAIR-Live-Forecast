@@ -1,0 +1,1063 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AQUAIR Operations</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <style>
+      :root {
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          Segoe UI,
+          sans-serif;
+        background: #eef3f8;
+        color: #132033;
+        --panel: #ffffff;
+        --line: #d9e2ee;
+        --muted: #64748b;
+        --blue: #5b7fc7;
+        --green: #6f9f87;
+        --yellow: #c7a85d;
+        --orange: #c98a67;
+        --red: #bd7474;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      button,
+      select {
+        font: inherit;
+      }
+      .app-shell {
+        min-height: 100vh;
+      }
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(14px);
+        border-bottom: 1px solid var(--line);
+        padding: 18px min(5vw, 64px);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+      }
+      .brand h1 {
+        margin: 0 0 4px;
+        font-size: clamp(24px, 3vw, 36px);
+      }
+      .brand p,
+      .muted {
+        margin: 0;
+        color: var(--muted);
+      }
+      .status-pill {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #f8fafc;
+        padding: 8px 12px;
+        color: #475569;
+        font-weight: 750;
+        white-space: nowrap;
+      }
+      main {
+        padding: 18px min(5vw, 64px) 36px;
+        display: grid;
+        gap: 12px;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 16px;
+        box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+      }
+      .toolbar,
+      .panel-head,
+      .controls {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .controls {
+        justify-content: flex-start;
+      }
+      .btn {
+        border: 1px solid transparent;
+        border-radius: 8px;
+        padding: 10px 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition:
+          transform 120ms ease,
+          filter 120ms ease;
+      }
+      .btn:hover {
+        transform: translateY(-1px);
+        filter: brightness(1.02);
+      }
+      .btn-secondary {
+        background: #e8eef9;
+        border-color: #cbd7e7;
+        color: #1b2a44;
+      }
+      .btn-reset {
+        background: #334155;
+        color: #fff;
+      }
+      .btn-normal {
+        background: var(--green);
+        color: #fff;
+      }
+      .btn-moderate {
+        background: var(--yellow);
+        color: #fff;
+      }
+      .btn-high {
+        background: var(--orange);
+        color: #fff;
+      }
+      .btn-unhealthy {
+        background: var(--red);
+        color: #fff;
+      }
+      .alert {
+        border-radius: 10px;
+        padding: 18px;
+        color: #fff;
+        background: #94a3b8;
+      }
+      .alert strong {
+        display: block;
+        font-size: clamp(30px, 5vw, 48px);
+        line-height: 1;
+      }
+      .alert span {
+        display: block;
+        margin-top: 8px;
+        font-weight: 750;
+      }
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(150px, 1fr));
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .metric {
+        border: 1px solid #e0e7f1;
+        border-radius: 10px;
+        padding: 14px;
+        background: linear-gradient(180deg, #fff, #f8fbff);
+      }
+      .metric span {
+        display: block;
+        color: #617089;
+        font-size: 13px;
+      }
+      .metric strong {
+        display: block;
+        margin-top: 4px;
+        font-size: 24px;
+      }
+      .visual-grid {
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        gap: 10px;
+      }
+      .chart-card h3 {
+        margin: 0 0 8px;
+        font-size: 16px;
+      }
+      canvas {
+        width: 100%;
+        height: 300px;
+        display: block;
+        border: 1px solid #e0e7f1;
+        border-radius: 10px;
+        background: #fff;
+      }
+      .gauge {
+        height: 130px;
+        margin-top: 10px;
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .legend span {
+        border-radius: 999px;
+        padding: 6px 10px;
+        color: #4b5563;
+        font-weight: 500;
+        font-size: 13px;
+      }
+      .segmented {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .segmented button,
+      select {
+        border: 1px solid #cbd7e7;
+        border-radius: 8px;
+        padding: 9px 11px;
+        background: #fff;
+        color: #1f2937;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      .segmented button.active {
+        background: #e8eef9;
+        border-color: #9fb4da;
+        color: #1d4ed8;
+      }
+      .chart-wrap {
+        position: relative;
+      }
+      .tooltip {
+        position: absolute;
+        display: none;
+        pointer-events: none;
+        background: #111827;
+        color: #fff;
+        padding: 7px 9px;
+        border-radius: 6px;
+        font-size: 12px;
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
+        z-index: 5;
+      }
+      .analysis {
+        border: 1px solid #dbe4f0;
+        background: #f8fbff;
+        border-radius: 12px;
+        padding: 18px;
+        color: #1f2937;
+        line-height: 1.6;
+        min-height: 140px;
+      }
+
+      .analysis h2 {
+        font-size: 17px;
+        margin: 18px 0 10px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid #dbe4f0;
+        color: #132033;
+      }
+
+      .analysis h2:first-child {
+        margin-top: 0;
+      }
+
+      .analysis p {
+        margin: 8px 0 12px;
+        background: #ffffff;
+        border: 1px solid #e5edf7;
+        border-radius: 8px;
+        padding: 10px 12px;
+      }
+
+      .analysis ul {
+        margin: 8px 0 14px;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+      }
+
+      .analysis li {
+        background: #ffffff;
+        border: 1px solid #e5edf7;
+        border-left: 4px solid var(--blue);
+        border-radius: 8px;
+        padding: 10px 12px;
+      }
+      .thinking {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        color: #475569;
+      }
+      .brain {
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: #e8eef9;
+        color: #5b7fc7;
+        animation: pulse 1.4s ease-in-out infinite;
+        font-weight: 900;
+      }
+      .dots::after {
+        content: "";
+        animation: dots 1.2s steps(4, end) infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          transform: scale(1);
+          box-shadow: 0 0 0 0 rgba(91, 127, 199, 0.25);
+        }
+        50% {
+          transform: scale(1.06);
+          box-shadow: 0 0 0 10px rgba(91, 127, 199, 0);
+        }
+      }
+      @keyframes dots {
+        0% {
+          content: "";
+        }
+        25% {
+          content: ".";
+        }
+        50% {
+          content: "..";
+        }
+        75%,
+        100% {
+          content: "...";
+        }
+      }
+      @media (max-width: 1100px) {
+        .visual-grid,
+        .metrics {
+          grid-template-columns: 1fr;
+        }
+        .topbar {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      const { useEffect, useRef, useState } = React;
+      const e = React.createElement;
+      const fmt = (n) => Number(n ?? 0).toFixed(2);
+
+      async function jsonFetch(url, options) {
+        const res = await fetch(url, options);
+        const text = await res.text();
+        const data = text ? JSON.parse(text) : {};
+        if (!res.ok) throw new Error(data.error || text);
+        return data;
+      }
+
+      function escapeHtml(text) {
+        return String(text).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+      }
+
+      function formatInline(text) {
+        return escapeHtml(text).replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+      }
+
+      function renderMarkdownLite(markdown) {
+        const lines = String(markdown || "").split(/\r?\n/);
+        let html = "";
+        let inList = false;
+
+        const closeList = () => {
+          if (inList) {
+            html += "</ul>";
+            inList = false;
+          }
+        };
+
+        lines.forEach((line) => {
+          const trimmed = line.trim();
+
+          if (!trimmed) {
+            closeList();
+            return;
+          }
+
+          if (trimmed.startsWith("## ")) {
+            closeList();
+            html += `<h2>${formatInline(trimmed.slice(3))}</h2>`;
+          } else if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+            if (!inList) {
+              html += "<ul>";
+              inList = true;
+            }
+            html += `<li>${formatInline(trimmed.slice(2))}</li>`;
+          } else {
+            closeList();
+            html += `<p>${formatInline(trimmed)}</p>`;
+          }
+        });
+
+        closeList();
+        return html || "No analysis returned.";
+      }
+
+      function prepareCanvas(canvas) {
+        const ratio = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        const width = Math.max(320, rect.width || 800);
+        const height = Math.max(120, rect.height || 300);
+        canvas.width = Math.floor(width * ratio);
+        canvas.height = Math.floor(height * ratio);
+        const ctx = canvas.getContext("2d");
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        ctx.font = "13px Inter, Segoe UI, sans-serif";
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, width, height);
+        return { ctx, w: width, h: height };
+      }
+
+      function timeLabel(row) {
+        const raw = row["timestamp(UTC+1)"] || row.timestamp || "";
+        const match = String(raw).match(/(\\d{2}:\\d{2})/);
+        return match ? match[1] : "";
+      }
+
+      function drawTimeTicks(ctx, rows, xFor, y) {
+        if (!rows.length) return;
+        const maxLabels = 6;
+        const step = Math.max(1, Math.ceil(rows.length / maxLabels));
+        const indexes = [];
+        rows.forEach((_, index) => {
+          if (index % step === 0 || index === rows.length - 1) indexes.push(index);
+        });
+        if (
+          indexes.length > 1 &&
+          xFor(indexes[indexes.length - 1]) - xFor(indexes[indexes.length - 2]) < 58
+        ) {
+          indexes.splice(indexes.length - 2, 1);
+        }
+        ctx.save();
+        ctx.fillStyle = "#64748b";
+        ctx.textAlign = "center";
+        ctx.font = "12px Inter, Segoe UI, sans-serif";
+        indexes.forEach((index) => ctx.fillText(timeLabel(rows[index]), xFor(index), y));
+        ctx.restore();
+      }
+
+      function niceScale(values) {
+        const maxValue = Math.max(0, ...values);
+        const maxY = Math.max(12, Math.ceil((maxValue + 5) / 5) * 5);
+        const step = maxY <= 20 ? 5 : maxY <= 60 ? 10 : 20;
+        return { maxY, step };
+      }
+
+      function drawYAxis(ctx, minX, maxX, top, bottom, maxY, step) {
+        const yFor = (v) => bottom - (v / maxY) * (bottom - top);
+        ctx.save();
+        ctx.strokeStyle = "#e5e7eb";
+        ctx.fillStyle = "#64748b";
+        ctx.font = "12px Inter, Segoe UI, sans-serif";
+        for (let tick = 0; tick <= maxY; tick += step) {
+          const y = yFor(tick);
+          ctx.beginPath();
+          ctx.moveTo(minX, y);
+          ctx.lineTo(maxX, y);
+          ctx.stroke();
+          ctx.fillText(String(tick), 18, y + 4);
+        }
+        ctx.restore();
+        return yFor;
+      }
+
+      function ChartCanvas({ id, draw, deps = [], className = "" }) {
+        const ref = useRef(null);
+        useEffect(() => {
+          if (ref.current) draw(ref.current);
+        }, deps);
+        return e("canvas", { id, ref, className });
+      }
+
+      function drawPm25Chart(canvas, rows, setHitPoints) {
+        const { ctx, w, h } = prepareCanvas(canvas);
+        if (!rows.length) {
+          ctx.fillStyle = "#64748b";
+          ctx.fillText("No rows yet.", 54, 150);
+          setHitPoints([]);
+          return;
+        }
+        const values = rows.map((r) => Number(r.pm25 || 0));
+        const { maxY, step } = niceScale(values);
+        const minX = 84,
+          maxX = w - 36,
+          top = 28,
+          bottom = h - 58;
+        const xFor = (i) => (rows.length === 1 ? minX : minX + (i / (rows.length - 1)) * (maxX - minX));
+        const yFor = drawYAxis(ctx, minX, maxX, top, bottom, maxY, step);
+        ctx.strokeStyle = "#5b7fc7";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        values.forEach((v, i) => {
+          const x = xFor(i),
+            y = yFor(v);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        const hits = [];
+        ctx.fillStyle = "#5b7fc7";
+        values.forEach((v, i) => {
+          const x = xFor(i),
+            y = yFor(v);
+          hits.push({ x, y, value: v, row: rows[i] });
+          ctx.beginPath();
+          ctx.arc(x, y, 4, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        setHitPoints(hits);
+        drawTimeTicks(ctx, rows, xFor, h - 34);
+        ctx.fillStyle = "#132033";
+        ctx.fillText(`15-min points: ${rows.length} | Latest PM2.5: ${fmt(values.at(-1))}`, 54, h - 12);
+      }
+
+      function drawGauge(canvas, value) {
+        const { ctx, w, h } = prepareCanvas(canvas);
+        const left = 54,
+          right = w - 54,
+          y = 54,
+          barH = 24,
+          max = 80;
+        [
+          [0, 12, "#6f9f87", "Normal"],
+          [12, 35, "#c7a85d", "Moderate"],
+          [35, 55, "#c98a67", "High"],
+          [55, 80, "#bd7474", "Unhealthy"],
+        ].forEach(([start, end, color, label]) => {
+          const x = left + (start / max) * (right - left);
+          const width = ((end - start) / max) * (right - left);
+          ctx.fillStyle = color;
+          ctx.fillRect(x, y, width, barH);
+          ctx.fillStyle = "#132033";
+          ctx.fillText(label, x + 4, y + 48);
+        });
+        ctx.fillStyle = "#64748b";
+        ctx.fillText("PM2.5 risk gauge (ug/m3)", left, 24);
+        if (value == null) {
+          ctx.fillText("Waiting for prediction", left, y - 10);
+          return;
+        }
+        const x = left + (Math.max(0, Math.min(max, Number(value))) / max) * (right - left);
+        ctx.strokeStyle = "#0f172a";
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(x, y - 12);
+        ctx.lineTo(x, y + barH + 12);
+        ctx.stroke();
+        ctx.fillStyle = "#0f172a";
+        ctx.fillText(`${fmt(value)} ug/m3`, Math.min(x + 8, right - 90), y - 12);
+      }
+
+      function drawGasChart(canvas, rows) {
+        const { ctx, w, h } = prepareCanvas(canvas);
+        if (!rows.length) {
+          ctx.fillStyle = "#64748b";
+          ctx.fillText("No rows yet.", 40, 150);
+          return;
+        }
+        const co2 = rows.map((r) => Number(r.co2 || 0)),
+          vocScaled = rows.map((r) => Number(r.voc || 0) * 4);
+        const maxY = Math.max(1000, ...co2, ...vocScaled);
+        const minX = 52,
+          maxX = w - 24,
+          top = 24,
+          bottom = h - 42;
+        const xFor = (i) => (rows.length === 1 ? minX : minX + (i / (rows.length - 1)) * (maxX - minX));
+        const yFor = (v) => bottom - (v / maxY) * (bottom - top);
+        [400, 800, 1200].forEach((value) => {
+          const y = yFor(value);
+          ctx.strokeStyle = "#e5e7eb";
+          ctx.beginPath();
+          ctx.moveTo(minX, y);
+          ctx.lineTo(maxX, y);
+          ctx.stroke();
+          ctx.fillStyle = "#64748b";
+          ctx.fillText(String(value), 12, y + 4);
+        });
+        const line = (values, color) => {
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          values.forEach((v, i) => {
+            const x = xFor(i),
+              y = yFor(v);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          });
+          ctx.stroke();
+        };
+        line(co2, "#6f9f87");
+        line(vocScaled, "#8d95a3");
+        ctx.fillStyle = "#6f9f87";
+        ctx.fillText("CO2", minX, h - 14);
+        ctx.fillStyle = "#8d95a3";
+        ctx.fillText("VOC x4", minX + 52, h - 14);
+        drawTimeTicks(ctx, rows, xFor, h - 30);
+      }
+
+      function drawBarChart(canvas, summary) {
+        const { ctx, w } = prepareCanvas(canvas);
+        if (!summary?.ready) {
+          ctx.fillStyle = "#64748b";
+          ctx.fillText("No latest reading yet.", 40, 150);
+          return;
+        }
+        [
+          ["PM2.5", summary.latest.pm25, 70, "#5b7fc7"],
+          ["PM10", summary.latest.pm10, 100, "#8d95a3"],
+          ["CO2", summary.latest.co2, 1400, "#6f9f87"],
+          ["VOC", summary.latest.voc, 350, "#9aa1ad"],
+        ].forEach(([label, value, scale, color], i) => {
+          const y = 42 + i * 66,
+            left = 72,
+            width = Math.min(1, value / scale) * (w - 160);
+          ctx.fillStyle = "#eef2f7";
+          ctx.fillRect(left, y, w - 160, 34);
+          ctx.fillStyle = color;
+          ctx.fillRect(left, y, width, 34);
+          ctx.fillStyle = "#132033";
+          ctx.fillText(label, 20, y + 22);
+          ctx.fillText(fmt(value), left + width + 8, y + 22);
+        });
+      }
+
+      function bandFor(v) {
+        return v < 12 ? "Normal" : v < 35 ? "Moderate" : v < 55 ? "High" : "Unhealthy";
+      }
+      function drawBandChart(canvas, rows) {
+        const { ctx, w } = prepareCanvas(canvas);
+        if (!rows.length) {
+          ctx.fillStyle = "#64748b";
+          ctx.fillText("No history yet.", 40, 150);
+          return;
+        }
+        const bands = [
+          ["Normal", "#6f9f87"],
+          ["Moderate", "#c7a85d"],
+          ["High", "#c98a67"],
+          ["Unhealthy", "#bd7474"],
+        ];
+        const counts = Object.fromEntries(bands.map(([name]) => [name, 0]));
+        rows.forEach((r) => counts[bandFor(Number(r.pm25 || 0))]++);
+        const maxCount = Math.max(1, ...Object.values(counts)),
+          total = rows.length,
+          left = 110,
+          labelX = w - 132,
+          barMax = Math.max(120, labelX - left - 16);
+        bands.forEach(([name, color], i) => {
+          const y = 42 + i * 66,
+            count = counts[name],
+            width = (count / maxCount) * barMax,
+            pct = Math.round((count / total) * 100);
+          ctx.fillStyle = "#eef2f7";
+          ctx.fillRect(left, y, barMax, 38);
+          ctx.fillStyle = color;
+          ctx.fillRect(left, y, width, 38);
+          ctx.fillStyle = "#132033";
+          ctx.fillText(name, 24, y + 24);
+          ctx.fillText(`${count} points`, labelX, y + 17);
+          ctx.fillText(`${pct}%`, labelX, y + 33);
+        });
+      }
+
+      function drawMomentumChart(canvas, rows) {
+        const { ctx, w, h } = prepareCanvas(canvas);
+        if (rows.length < 2) {
+          ctx.fillStyle = "#64748b";
+          ctx.fillText("Need at least 2 rows for momentum.", 40, 150);
+          return;
+        }
+        const recent = rows.slice(-16),
+          deltas = [];
+        for (let i = 1; i < recent.length; i++)
+          deltas.push(Number(recent[i].pm25 || 0) - Number(recent[i - 1].pm25 || 0));
+        const maxAbs = Math.max(3, ...deltas.map((v) => Math.abs(v))),
+          mid = h / 2,
+          left = 32,
+          right = w - 24,
+          gap = 6,
+          barW = (right - left - gap * (deltas.length - 1)) / deltas.length;
+        ctx.strokeStyle = "#cbd5e1";
+        ctx.beginPath();
+        ctx.moveTo(left, mid);
+        ctx.lineTo(right, mid);
+        ctx.stroke();
+        ctx.fillStyle = "#64748b";
+        ctx.fillText("rising", 34, 26);
+        ctx.fillText("falling", 34, h - 14);
+        deltas.forEach((delta, i) => {
+          const x = left + i * (barW + gap),
+            height = (Math.abs(delta) / maxAbs) * (h / 2 - 40),
+            y = delta >= 0 ? mid - height : mid;
+          ctx.fillStyle = delta >= 0 ? "#c98a67" : "#6f9f87";
+          ctx.fillRect(x, y, barW, height);
+        });
+        const latest = deltas.at(-1);
+        ctx.fillStyle = "#132033";
+        ctx.fillText(`Latest change: ${latest >= 0 ? "+" : ""}${fmt(latest)} ug/m3`, 34, h - 34);
+      }
+
+      function Metric({ label, value }) {
+        return e("div", { className: "metric" }, e("span", null, label), e("strong", null, value ?? "-"));
+      }
+
+      function App() {
+        const [status, setStatus] = useState("Ready.");
+        const [prediction, setPrediction] = useState(null);
+        const [summary, setSummary] = useState(null);
+        const [rows, setRows] = useState([]);
+        const [rangeHours, setRangeHours] = useState(24);
+        const [interval, setIntervalValue] = useState("15min");
+        const [analysis, setAnalysis] = useState("No analysis yet.");
+        const [analyzing, setAnalyzing] = useState(false);
+        const [hitPoints, setHitPoints] = useState([]);
+        const tooltipRef = useRef(null);
+
+        async function refresh() {
+          const [live, history, summaryData] = await Promise.all([
+            jsonFetch("/api/live"),
+            jsonFetch(`/api/history?range_hours=${rangeHours}&interval=${interval}`),
+            jsonFetch("/api/summary"),
+          ]);
+          setPrediction(live);
+          setRows(history.rows);
+          setSummary(summaryData);
+          if (live.telegram)
+            setStatus(live.telegram.sent ? "Alert sent." : `Prediction ${live.telegram.reason}.`);
+          else setStatus("Prediction refreshed.");
+        }
+
+        async function addRow(scenario) {
+          const data = await jsonFetch(`/api/demo/add?scenario=${scenario}`, { method: "POST" });
+          setStatus(`Added ${scenario} row at ${data.row["timestamp(UTC+1)"]} with PM2.5=${data.row.pm25}`);
+          await refresh();
+        }
+
+        async function resetRows() {
+          await jsonFetch("/api/demo/reset", { method: "POST" });
+          setStatus("Rows reset. Add 13 rows before prediction.");
+          await refresh();
+        }
+
+        async function analyze() {
+          try {
+            setAnalyzing(true);
+            setAnalysis("");
+            setStatus("Analyzing hatchery conditions...");
+            const result = await jsonFetch(`/api/analyze?range_hours=${rangeHours}&interval=${interval}`);
+            setAnalysis(result.analysis);
+            setStatus("Analysis completed.");
+          } catch (err) {
+            setAnalysis(err.message);
+            setStatus(`Analysis failed: ${err.message}`);
+          } finally {
+            setAnalyzing(false);
+          }
+        }
+
+        useEffect(() => {
+          refresh().catch((err) => setStatus(`Initial refresh failed: ${err.message}`));
+        }, [rangeHours, interval]);
+
+        const level = prediction?.ready
+          ? prediction.level
+          : {
+              name: "Warming up",
+              action: prediction?.message || "Add at least 13 rows, then press Predict.",
+              color: "#94a3b8",
+            };
+        const currentPm25 = summary?.ready
+          ? fmt(summary.latest.pm25)
+          : prediction?.trend
+            ? fmt(prediction.trend.current_pm25)
+            : "-";
+
+        function onChartMove(event) {
+          const rect = event.currentTarget.getBoundingClientRect();
+          const x = event.clientX - rect.left,
+            y = event.clientY - rect.top;
+          const nearest = hitPoints
+            .map((point) => ({ point, distance: Math.hypot(point.x - x, point.y - y) }))
+            .sort((a, b) => a.distance - b.distance)[0];
+          const tooltip = tooltipRef.current;
+          if (!nearest || nearest.distance > 18) {
+            tooltip.style.display = "none";
+            return;
+          }
+          tooltip.style.display = "block";
+          tooltip.style.left = `${Math.min(x + 12, rect.width - 150)}px`;
+          tooltip.style.top = `${Math.max(8, y - 42)}px`;
+          tooltip.innerHTML = `PM2.5: ${fmt(nearest.point.value)}<br>${timeLabel(nearest.point.row)}`;
+        }
+
+        return e(
+          "div",
+          { className: "app-shell" },
+          e(
+            "header",
+            { className: "topbar" },
+            e(
+              "div",
+              { className: "brand" },
+              e("h1", null, "AQUAIR Operations"),
+              e("p", null, "Live PM2.5 forecasting, warning status, and AI consultation for the hatchery."),
+            ),
+            e("span", { className: "status-pill" }, status),
+          ),
+          e(
+            "main",
+            null,
+            e(
+              "section",
+              { className: "panel" },
+              e(
+                "div",
+                { className: "toolbar" },
+                e(
+                  "div",
+                  null,
+                  e("h2", null, "Command Center"),
+                  e(
+                    "p",
+                    { className: "muted" },
+                    "Simulate sensor rows, predict risk, and analyze the situation.",
+                  ),
+                ),
+                e(
+                  "div",
+                  { className: "controls" },
+                  e("button", { className: "btn btn-secondary", onClick: refresh }, "Predict"),
+                  e("button", { className: "btn btn-secondary", onClick: analyze }, "Analyze"),
+                ),
+              ),
+              e(
+                "div",
+                { className: "controls" },
+                e("button", { className: "btn btn-normal", onClick: () => addRow("normal") }, "Add Normal"),
+                e(
+                  "button",
+                  { className: "btn btn-moderate", onClick: () => addRow("moderate") },
+                  "Add Moderate",
+                ),
+                e("button", { className: "btn btn-high", onClick: () => addRow("high") }, "Add High"),
+                e(
+                  "button",
+                  { className: "btn btn-unhealthy", onClick: () => addRow("unhealthy") },
+                  "Add Unhealthy",
+                ),
+                e("button", { className: "btn btn-reset", onClick: resetRows }, "Reset Rows"),
+              ),
+            ),
+            e(
+              "section",
+              { className: "panel" },
+              e(
+                "div",
+                { className: "alert", style: { background: level.color } },
+                e("strong", null, level.name),
+                e("span", null, level.action),
+              ),
+              e(
+                "div",
+                { className: "metrics" },
+                e(Metric, {
+                  label: "PM2.5 used for warning",
+                  value: prediction?.ready ? fmt(prediction.risk_pm25) : "-",
+                }),
+                e(Metric, {
+                  label: "Predicted PM2.5 in 15m",
+                  value: prediction?.ready ? fmt(prediction.prediction) : "-",
+                }),
+                e(Metric, { label: "Current PM2.5", value: currentPm25 }),
+                e(Metric, {
+                  label: "Live history",
+                  value: prediction ? `${prediction.available_rows}/${prediction.required_rows}` : "-",
+                }),
+              ),
+              e(
+                "div",
+                { className: "metrics" },
+                e(Metric, { label: "Current CO2", value: summary?.ready ? fmt(summary.latest.co2) : "-" }),
+                e(Metric, { label: "Current VOC", value: summary?.ready ? fmt(summary.latest.voc) : "-" }),
+                e(Metric, { label: "Current PM10", value: summary?.ready ? fmt(summary.latest.pm10) : "-" }),
+                e(Metric, {
+                  label: "1h Avg / Max PM2.5",
+                  value: summary?.ready ? `${fmt(summary.avg_pm25_1h)} / ${fmt(summary.max_pm25_1h)}` : "-",
+                }),
+              ),
+              e(
+                "p",
+                { className: "muted" },
+                `Latest timestamp: ${prediction?.latest_timestamp || "-"} | Warning basis: ${prediction?.risk_source || "-"} | Trend: ${prediction?.trend?.direction || "-"}`,
+              ),
+              e(ChartCanvas, {
+                id: "gaugeChart",
+                className: "gauge",
+                draw: (canvas) => drawGauge(canvas, prediction?.ready ? prediction.risk_pm25 : null),
+                deps: [prediction],
+              }),
+            ),
+            e(
+              "section",
+              { className: "panel" },
+              e(
+                "div",
+                { className: "panel-head" },
+                e(
+                  "div",
+                  null,
+                  e("h2", null, "Dashboard Visuals"),
+                  e(
+                    "p",
+                    { className: "muted" },
+                    "Latest 24h by default. Each point can represent 5, 15, or 30 minutes.",
+                  ),
+                ),
+                e(
+                  "div",
+                  { className: "toolbar" },
+                  e(
+                    "div",
+                    { className: "segmented" },
+                    [1, 6, 12, 24].map((value) =>
+                      e(
+                        "button",
+                        {
+                          key: value,
+                          className: rangeHours === value ? "active" : "",
+                          onClick: () => setRangeHours(value),
+                        },
+                        `${value}h`,
+                      ),
+                    ),
+                  ),
+                  e(
+                    "select",
+                    { value: interval, onChange: (event) => setIntervalValue(event.target.value) },
+                    e("option", { value: "5min" }, "5 min points"),
+                    e("option", { value: "15min" }, "15 min points"),
+                    e("option", { value: "30min" }, "30 min points"),
+                  ),
+                ),
+              ),
+              e(
+                "div",
+                { className: "visual-grid" },
+                e(
+                  "div",
+                  { className: "chart-card" },
+                  e("h3", null, "PM2.5 History"),
+                  e(
+                    "div",
+                    { className: "chart-wrap" },
+                    e(ChartCanvas, {
+                      id: "chart",
+                      draw: (canvas) => drawPm25Chart(canvas, rows, setHitPoints),
+                      deps: [rows],
+                    }),
+                    e("div", { ref: tooltipRef, className: "tooltip" }),
+                  ),
+                  e(
+                    "p",
+                    { className: "muted" },
+                    "Each point is an average. Several 5-minute rows can become one point.",
+                  ),
+                  e(
+                    "div",
+                    { className: "legend" },
+                    e("span", { style: { background: "#d8eadf" } }, "0-12 Normal"),
+                    e("span", { style: { background: "#efe2bd" } }, "12-35 Moderate"),
+                    e("span", { style: { background: "#f0d2c3" } }, "35-55 High"),
+                    e("span", { style: { background: "#ead0d0" } }, "55+ Unhealthy"),
+                  ),
+                ),
+                e(
+                  "div",
+                  { className: "chart-card" },
+                  e("h3", null, "Current Snapshot"),
+                  e(ChartCanvas, {
+                    id: "barChart",
+                    draw: (canvas) => drawBarChart(canvas, summary),
+                    deps: [summary],
+                  }),
+                ),
+                e(
+                  "div",
+                  { className: "chart-card" },
+                  e("h3", null, "CO2 / VOC Trend"),
+                  e(ChartCanvas, {
+                    id: "gasChart",
+                    draw: (canvas) => drawGasChart(canvas, rows),
+                    deps: [rows],
+                  }),
+                ),
+                e(
+                  "div",
+                  { className: "chart-card" },
+                  e("h3", null, "Warning Mix"),
+                  e(ChartCanvas, {
+                    id: "bandChart",
+                    draw: (canvas) => drawBandChart(canvas, rows),
+                    deps: [rows],
+                  }),
+                ),
+                e(
+                  "div",
+                  { className: "chart-card" },
+                  e("h3", null, "PM2.5 Momentum"),
+                  e(ChartCanvas, {
+                    id: "momentumChart",
+                    draw: (canvas) => drawMomentumChart(canvas, rows),
+                    deps: [rows],
+                  }),
+                ),
+              ),
+            ),
+            e(
+              "section",
+              { className: "panel" },
+              e("h2", null, "AI Consultation"),
+              e(
+                "p",
+                { className: "muted" },
+                "Analyze sends a compact PM2.5 report and returns operator-facing feedback.",
+              ),
+              e(
+                "div",
+                { className: "analysis" },
+                analyzing
+                  ? e(
+                      "div",
+                      { className: "thinking" },
+                      e("div", { className: "brain" }, "AI"),
+                      e(
+                        "div",
+                        null,
+                        e("strong", { className: "dots" }, "Analyzing hatchery conditions"),
+                        e("p", null, "Checking PM2.5 trend, warning level, and sensor context."),
+                      ),
+                    )
+                  : e("div", { dangerouslySetInnerHTML: { __html: renderMarkdownLite(analysis) } }),
+              ),
+            ),
+          ),
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(e(App));
+    </script>
+  </body>
+</html>

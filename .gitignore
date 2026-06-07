@@ -1,7 +1,7 @@
 __pycache__/
 *.py[cod]
 
-*.env*
+*.env
 live_sensor.csv
 models/alarm_state.json
 

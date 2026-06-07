@@ -6,6 +6,3 @@ live_sensor.csv
 models/alarm_state.json
 
 .ipynb_checkpoints/
-
-/dataset
-demo.txt

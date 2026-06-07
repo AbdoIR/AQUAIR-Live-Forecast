@@ -8,7 +8,8 @@ the latest sensor row plus the previous 12 five-minute rows.
 
 ```text
 alarm_monitor.py          Telegram alarm loop for live CSV monitoring
-model_interface.py        Live/dashboard demo and shared prediction helpers
+model_interface.py        Live API server and shared prediction helpers
+react_dashboard.html      React operations dashboard served by the API server
 simulate_sensors.py       Local hatchery sensor simulator
 telegram_alarm.py         Telegram Bot API sender
 train_and_save_model.py   Training script that saves the best model
